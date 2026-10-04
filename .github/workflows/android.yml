@@ -53,7 +53,7 @@ jobs:
           packages: platform-tools
 
       - name: Install Android SDK 37
-        run: sdkmanager "platforms;android-37"
+        run: sdkmanager "platforms;android-37.2"
 
       - name: Validate Gradle wrapper
         uses: gradle/actions/wrapper-validation@v6
@@ -113,7 +113,7 @@ jobs:
           packages: platform-tools
 
       - name: Install Android SDK 37
-        run: sdkmanager "platforms;android-37"
+        run: sdkmanager "platforms;android-37.2"
 
       - name: Validate release secrets
         shell: bash
