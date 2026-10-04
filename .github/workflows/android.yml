@@ -154,10 +154,19 @@ jobs:
           fi
           chmod 600 "$GITHUB_WORKSPACE/keystore.jks"
 
-      - name: Build release APK
+      - name: Build signed release APK
+        if: ${{ env.RELEASE_SIGNING_MODE == 'keystore' }}
         shell: bash
         env:
           KEYSTORE_PATH: ${{ github.workspace }}/keystore.jks
+        run: |
+          set -euo pipefail
+          chmod +x ./gradlew
+          ./gradlew :app:android:assembleRelease --no-daemon
+
+      - name: Build release APK with fallback signing
+        if: ${{ env.RELEASE_SIGNING_MODE == 'debug-fallback' }}
+        shell: bash
         run: |
           set -euo pipefail
           chmod +x ./gradlew
