@@ -2,6 +2,12 @@ name: Android CI
 
 on:
   workflow_dispatch:
+    inputs:
+      build_release:
+        description: Build a signed release APK
+        required: false
+        default: false
+        type: boolean
   pull_request:
     paths-ignore:
       - "README.md"
@@ -73,7 +79,7 @@ jobs:
   release:
     name: Build signed release APK
     if: >-
-      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'workflow_dispatch' && inputs.build_release == true) ||
       startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     timeout-minutes: 45
@@ -120,7 +126,17 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          printf '%s' "$SIGNING_KEY" | base64 --decode > "$GITHUB_WORKSPACE/keystore.jks"
+          if printf '%s' "$SIGNING_KEY" | base64 --decode > "$GITHUB_WORKSPACE/keystore.jks" 2>/dev/null && \
+             keytool -list -keystore "$GITHUB_WORKSPACE/keystore.jks" -storepass "$KEYSTORE_PASS" >/dev/null 2>&1; then
+            echo 'Decoded SIGNING_KEY as base64-encoded keystore.'
+          elif printf '%s' "$SIGNING_KEY" > "$GITHUB_WORKSPACE/keystore.jks" && \
+               keytool -list -keystore "$GITHUB_WORKSPACE/keystore.jks" -storepass "$KEYSTORE_PASS" >/dev/null 2>&1; then
+            echo 'Using SIGNING_KEY as a raw keystore.'
+          else
+            echo 'SIGNING_KEY is not a readable JKS/PKCS12 keystore.' >&2
+            echo 'Store a base64-encoded keystore.jks in the SIGNING_KEY secret and verify KEY_STORE_PASSWORD.' >&2
+            exit 1
+          fi
           chmod 600 "$GITHUB_WORKSPACE/keystore.jks"
 
       - name: Build signed release APK
