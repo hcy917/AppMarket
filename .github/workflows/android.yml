@@ -35,20 +35,20 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up JDK 21
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: "21"
           cache: gradle
 
       - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v4
+        uses: gradle/actions/setup-gradle@v6
 
       - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
         with:
           packages: platform-tools
 
@@ -71,7 +71,7 @@ jobs:
           --no-daemon
 
       - name: Upload debug APK
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: appmarket-debug-apk-${{ github.sha }}
           path: app/android/build/outputs/apk/debug/*.apk
@@ -79,7 +79,7 @@ jobs:
           retention-days: 14
 
   release:
-    name: Build signed release APK
+    name: Build release APK
     if: >-
       (github.event_name == 'workflow_dispatch' && inputs.build_release == true) ||
       startsWith(github.ref, 'refs/tags/v')
@@ -93,40 +93,51 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
       - name: Set up JDK 21
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: "21"
           cache: gradle
 
       - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v4
+        uses: gradle/actions/setup-gradle@v6
 
       - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
         with:
           packages: platform-tools
 
       - name: Install Android SDK 37
         run: sdkmanager "platforms;android-37.2"
 
-      - name: Validate release secrets
+      - name: Select release signing mode
         shell: bash
         run: |
           set -euo pipefail
+          secrets_present=0
           for secret in SIGNING_KEY KEYSTORE_PASS KEY_ALIAS KEY_PASSWORD; do
-            if [[ -z "${!secret}" ]]; then
-              echo "Missing required GitHub secret: $secret" >&2
-              exit 1
+            if [[ -n "${!secret}" ]]; then
+              secrets_present=$((secrets_present + 1))
             fi
           done
+          if [[ "$secrets_present" -eq 0 ]]; then
+            echo "RELEASE_SIGNING_MODE=debug-fallback" >> "$GITHUB_ENV"
+            echo "No signing secrets configured; building a Release APK with the project's debug fallback signing config."
+          elif [[ "$secrets_present" -eq 4 ]]; then
+            echo "RELEASE_SIGNING_MODE=keystore" >> "$GITHUB_ENV"
+            echo "All signing secrets are present; building a signed Release APK."
+          else
+            echo "Signing secrets are incomplete; configure all four secrets or remove them all for the debug fallback." >&2
+            exit 1
+          fi
 
       - name: Decode signing key
+        if: ${{ env.RELEASE_SIGNING_MODE == 'keystore' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -143,7 +154,7 @@ jobs:
           fi
           chmod 600 "$GITHUB_WORKSPACE/keystore.jks"
 
-      - name: Build signed release APK
+      - name: Build release APK
         shell: bash
         env:
           KEYSTORE_PATH: ${{ github.workspace }}/keystore.jks
@@ -153,7 +164,7 @@ jobs:
           ./gradlew :app:android:assembleRelease --no-daemon
 
       - name: Upload release APK
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: appmarket-release-apk-${{ github.ref_name }}
           path: app/android/build/outputs/apk/release/*.apk
