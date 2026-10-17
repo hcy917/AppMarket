@@ -220,7 +220,6 @@ private fun UpdatesCardList(
                         minHeight = 34.dp,
                         insideMargin = PaddingValues(horizontal = 16.dp, vertical = 6.dp),
                         colors = ButtonDefaults.buttonColorsPrimary(),
-                        fontSize = 16.sp,
                     )
                 }
             }
