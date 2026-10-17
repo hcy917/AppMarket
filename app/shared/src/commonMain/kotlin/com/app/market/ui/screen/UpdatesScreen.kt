@@ -220,6 +220,7 @@ private fun UpdatesCardList(
                         minHeight = 34.dp,
                         insideMargin = PaddingValues(horizontal = 16.dp, vertical = 6.dp),
                         colors = ButtonDefaults.buttonColorsPrimary(),
+                        fontSize = 16.sp,
                     )
                 }
             }
@@ -387,6 +388,7 @@ private fun UpdateItemRow(
                 onCancel = onCancel,
                 minHeight = 34.dp,
                 insideMargin = PaddingValues(horizontal = 16.dp, vertical = 6.dp),
+                fontSize = 16.sp,
             )
         }
         Box(Modifier.fillMaxWidth()) {

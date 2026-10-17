@@ -64,6 +64,7 @@ fun AppButton(
     minHeight: Dp = ButtonDefaults.MinHeight,
     colors: ButtonColors = ButtonDefaults.buttonColors(),
     insideMargin: PaddingValues = ButtonDefaults.InsideMargin,
+    fontSize: TextUnit? = null,
 ) {
     AppButton(
         onClick = onClick,
@@ -75,7 +76,7 @@ fun AppButton(
         colors = colors,
         insideMargin = insideMargin,
     ) {
-        AppButtonText(text)
+        AppButtonText(text, fontSize = fontSize)
     }
 }
 
@@ -144,16 +145,19 @@ fun AppButtonText(
     text: String,
     modifier: Modifier = Modifier,
     color: Color? = null,
+    fontSize: TextUnit? = null,
 ) {
     val style = MiuixTheme.textStyles.body2
-    val maxFontSize = style.fontSize.takeUnless { it == TextUnit.Unspecified } ?: 14.sp
+    val maxFontSize = fontSize
+        ?: style.fontSize.takeUnless { it == TextUnit.Unspecified }
+        ?: 14.sp
     val minFontSize = if (maxFontSize.value < AppButtonMinFontSize.value) maxFontSize else AppButtonMinFontSize
     Text(
         text = text,
         modifier = modifier,
         color = color ?: Color.Unspecified,
         autoSize = DescendingSpAutoSize(minFontSize = minFontSize, maxFontSize = maxFontSize),
-        style = style,
+        style = style.copy(fontSize = maxFontSize),
         maxLines = 1,
         softWrap = false,
         overflow = TextOverflow.Ellipsis,
@@ -205,6 +209,7 @@ fun AppCompactButton(
     colors: ButtonColors = appTintedButtonColors(),
     minHeight: Dp = ActionButtonMinHeight,
     insideMargin: PaddingValues = ActionButtonInsideMargin,
+    fontSize: TextUnit? = null,
 ) {
     AppButton(
         text = text,
@@ -214,6 +219,7 @@ fun AppCompactButton(
         cornerRadius = 100.dp,
         minHeight = minHeight,
         insideMargin = insideMargin,
+        fontSize = fontSize,
         modifier = modifier,
     )
 }
@@ -242,6 +248,7 @@ fun AppActionButton(
     onResumeDownload: () -> Unit,
     onInstallDownloaded: (String) -> Unit,
     onCancel: (String) -> Unit,
+    fontSize: TextUnit? = null,
 ) {
     // 无账号体系可执行预约,按钮仅作状态展示。
     if (actionKind == AppActionKind.RESERVE) {
@@ -252,6 +259,7 @@ fun AppActionButton(
             modifier = modifier,
             minHeight = minHeight,
             insideMargin = insideMargin,
+            fontSize = fontSize,
         )
         return
     }
@@ -268,6 +276,7 @@ fun AppActionButton(
                 else -> percent?.let { "$it%" } ?: stringResource(Res.string.downloading_short)
             },
             fraction = (percent ?: 0).coerceIn(0, 100) / 100f,
+            fontSize = fontSize,
             onClick = {
                 if (downloadState.isPaused) {
                     onResumeDownload()
@@ -299,6 +308,7 @@ fun AppActionButton(
         colors = if (neutral) ButtonDefaults.buttonColors() else ButtonDefaults.buttonColorsPrimary(),
         minHeight = minHeight,
         insideMargin = insideMargin,
+        fontSize = fontSize,
     )
 }
 
@@ -315,6 +325,7 @@ private fun DownloadProgressButton(
     modifier: Modifier = Modifier,
     minHeight: Dp = ActionButtonMinHeight,
     insideMargin: PaddingValues = ActionButtonInsideMargin,
+    fontSize: TextUnit? = null,
     onClick: () -> Unit,
 ) {
     val primary = MiuixTheme.colorScheme.primary
@@ -349,6 +360,7 @@ private fun DownloadProgressButton(
             text = label,
             color = baseTextColor,
             modifier = Modifier.padding(insideMargin),
+            fontSize = fontSize,
         )
         // Same label in the fill-contrast color, clipped to the filled region so it covers the
         // base label only where the fill has reached.
@@ -366,6 +378,7 @@ private fun DownloadProgressButton(
                 text = label,
                 color = fillTextColor,
                 modifier = Modifier.padding(insideMargin),
+                fontSize = fontSize,
             )
         }
     }
