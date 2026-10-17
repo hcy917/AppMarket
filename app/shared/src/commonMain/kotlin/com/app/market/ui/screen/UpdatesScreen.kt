@@ -328,6 +328,7 @@ private fun UpdateItemRow(
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
             Row(
+                modifier = Modifier.weight(1f),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
@@ -336,7 +337,7 @@ private fun UpdateItemRow(
                     contentDescription = appDisplayName(app.displayName, app.source),
                     size = 48.dp,
                 )
-                Column(Modifier.width(195.dp)) {
+                Column(Modifier.weight(1f)) {
                     Text(
                         text = appDisplayName(app.displayName, app.source),
                         color = MiuixTheme.colorScheme.onSurface,
@@ -387,7 +388,6 @@ private fun UpdateItemRow(
                 onCancel = onCancel,
                 minHeight = 34.dp,
                 insideMargin = PaddingValues(horizontal = 16.dp, vertical = 6.dp),
-                fontSize = 16.sp,
             )
         }
         Box(Modifier.fillMaxWidth()) {
