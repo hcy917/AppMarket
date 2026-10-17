@@ -2,59 +2,194 @@ name: Android CI
 
 on:
   workflow_dispatch:
+    inputs:
+      build_release:
+        description: Build a signed release APK
+        required: false
+        default: false
+        type: boolean
+  pull_request:
+    paths-ignore:
+      - "README.md"
+      - "doc/**"
   push:
     branches: ["main"]
     tags:
       - "v*"
     paths-ignore:
       - "README.md"
-      - "doc/*"
-      - ".github/workflows/android.yml"
+      - "doc/**"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  build:
+  verify:
+    name: Verify and debug build
     runs-on: ubuntu-latest
+    timeout-minutes: 45
 
     steps:
-      - name: Checkout Repository
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: gradle
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v4
+        with:
+          packages: platform-tools
+
+      - name: Install Android SDK 37
+        run: sdkmanager "platforms;android-37.2"
+
+      - name: Validate Gradle wrapper
+        uses: gradle/actions/wrapper-validation@v6
+
+      - name: Make Gradle wrapper executable
+        run: chmod +x ./gradlew
+
+      - name: Run checks and build debug APK
+        run: >-
+          ./gradlew
+          check
+          :app:shared:compileKotlinDesktop
+          :app:shared:compileAndroidMain
+          :app:android:assembleDebug
+          --no-daemon
+
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v7
+        with:
+          name: appmarket-debug-apk-${{ github.sha }}
+          path: app/android/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          retention-days: 14
+
+  release:
+    name: Build release APK
+    if: >-
+      (github.event_name == 'workflow_dispatch' && inputs.build_release == true) ||
+      startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      SIGNING_KEY: ${{ secrets.SIGNING_KEY }}
+      KEYSTORE_PASS: ${{ secrets.KEY_STORE_PASSWORD }}
+      KEY_ALIAS: ${{ secrets.ALIAS }}
+      KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+
+    steps:
+      - name: Checkout repository
         uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
       - name: Set up JDK 21
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@v6
         with:
-          distribution: "zulu"
+          distribution: temurin
           java-version: "21"
+          cache: gradle
 
-      - name: Setup Gradle
+      - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v6
 
-      - name: Decode Signing Key
-        run: echo ${{ secrets.SIGNING_KEY }} | base64 -d > keystore.jks
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v4
+        with:
+          packages: platform-tools
 
-      - name: Build Release APK
+      - name: Install Android SDK 37
+        run: sdkmanager "platforms;android-37.2"
+
+      - name: Select release signing mode
+        shell: bash
         run: |
-          ./gradlew :app:android:assembleRelease
-          echo "APK_FILE=$(find app/android/build/outputs/apk/release -name '*.apk' | head -n 1)" >> $GITHUB_ENV
+          set -euo pipefail
+          secrets_present=0
+          for secret in SIGNING_KEY KEYSTORE_PASS KEY_ALIAS KEY_PASSWORD; do
+            if [[ -n "${!secret}" ]]; then
+              secrets_present=$((secrets_present + 1))
+            fi
+          done
+          if [[ "$secrets_present" -eq 0 ]]; then
+            echo "RELEASE_SIGNING_MODE=debug-fallback" >> "$GITHUB_ENV"
+            echo "No signing secrets configured; building a Release APK with the project's debug fallback signing config."
+          elif [[ "$secrets_present" -eq 4 ]]; then
+            echo "RELEASE_SIGNING_MODE=keystore" >> "$GITHUB_ENV"
+            echo "All signing secrets are present; building a signed Release APK."
+          else
+            echo "Signing secrets are incomplete; configure all four secrets or remove them all for the debug fallback." >&2
+            exit 1
+          fi
+
+      - name: Decode signing key
+        if: ${{ env.RELEASE_SIGNING_MODE == 'keystore' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if printf '%s' "$SIGNING_KEY" | base64 --decode > "$GITHUB_WORKSPACE/keystore.jks" 2>/dev/null && \
+             keytool -list -keystore "$GITHUB_WORKSPACE/keystore.jks" -storepass "$KEYSTORE_PASS" >/dev/null 2>&1; then
+            echo 'Decoded SIGNING_KEY as base64-encoded keystore.'
+          elif printf '%s' "$SIGNING_KEY" > "$GITHUB_WORKSPACE/keystore.jks" && \
+               keytool -list -keystore "$GITHUB_WORKSPACE/keystore.jks" -storepass "$KEYSTORE_PASS" >/dev/null 2>&1; then
+            echo 'Using SIGNING_KEY as a raw keystore.'
+          else
+            echo 'SIGNING_KEY is not a readable JKS/PKCS12 keystore.' >&2
+            echo 'Store a base64-encoded keystore.jks in the SIGNING_KEY secret and verify KEY_STORE_PASSWORD.' >&2
+            exit 1
+          fi
+          chmod 600 "$GITHUB_WORKSPACE/keystore.jks"
+
+      - name: Build signed release APK
+        if: ${{ env.RELEASE_SIGNING_MODE == 'keystore' }}
+        shell: bash
         env:
           KEYSTORE_PATH: ${{ github.workspace }}/keystore.jks
-          KEYSTORE_PASS: ${{ secrets.KEY_STORE_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.ALIAS }}
-          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          chmod +x ./gradlew
+          ./gradlew :app:android:assembleRelease --no-daemon
 
-      - name: Upload APK Artifact
-        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+      - name: Build release APK with fallback signing
+        if: ${{ env.RELEASE_SIGNING_MODE == 'debug-fallback' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x ./gradlew
+          ./gradlew :app:android:assembleRelease --no-daemon
+
+      - name: Upload release APK
         uses: actions/upload-artifact@v7
         with:
-          path: ${{ env.APK_FILE }}
-          archive: false
+          name: appmarket-release-apk-${{ github.run_id }}
+          path: app/android/build/outputs/apk/release/*.apk
+          if-no-files-found: error
+          retention-days: 30
 
-      - name: Display APK Hashes
+      - name: Publish APK hashes to summary
+        shell: bash
         run: |
-          echo "### APK Hashes" >> $GITHUB_STEP_SUMMARY
-          echo "| Hash Type | Hash Value |" >> $GITHUB_STEP_SUMMARY
-          echo "| --- | --- |" >> $GITHUB_STEP_SUMMARY
-          echo "| SHA256 | \`$(sha256sum "$APK_FILE" | awk '{ print $1 }')\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| SHA1 | \`$(sha1sum "$APK_FILE" | awk '{ print $1 }')\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| MD5 | \`$(md5sum "$APK_FILE" | awk '{ print $1 }')\` |" >> $GITHUB_STEP_SUMMARY
+          set -euo pipefail
+          apk_file="$(find app/android/build/outputs/apk/release -name '*.apk' -type f -print -quit)"
+          {
+            echo "### APK hashes"
+            echo
+            echo "| Hash | Value |"
+            echo "| --- | --- |"
+            echo "| SHA-256 | \`$(sha256sum "$apk_file" | awk '{print $1}')\` |"
+            echo "| SHA-1 | \`$(sha1sum "$apk_file" | awk '{print $1}')\` |"
+          } >> "$GITHUB_STEP_SUMMARY"
